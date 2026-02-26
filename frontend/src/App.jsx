@@ -96,7 +96,7 @@ function App() {
     setError('');
     setIsGenerating(true);
     try {
-      const response = await axios.post('http://localhost:8000/generate-script', {
+      const response = await axios.post('https://ai-podcast-generator-rpc4.onrender.com/generate-script', {
         input_mode: inputMode, topic, content, language, duration, speakers, llm_api_key: llmKey
       });
       setGeneratedScript(response.data.script);
@@ -111,7 +111,7 @@ function App() {
   const regeneratePart = async (index) => {
     setIsGenerating(true);
     try {
-      const response = await axios.post('http://localhost:8000/regenerate-script-part', {
+      const response = await axios.post('https://ai-podcast-generator-rpc4.onrender.com/regenerate-script-part', {
         script: generatedScript, index, llm_api_key: llmKey, language
       });
       const newScript = [...generatedScript];
@@ -135,7 +135,7 @@ function App() {
     setStudioStep('processing');
     try {
       console.log('Sending audio generation request with script:', generatedScript);
-      const response = await axios.post('http://localhost:8000/audio-from-script', {
+      const response = await axios.post('https://ai-podcast-generator-rpc4.onrender.com/audio-from-script', {
         script: generatedScript, speakers, channels, fonada_api_key: fonadaKey
       });
       console.log('Backend response:', response.data);
@@ -315,7 +315,7 @@ const TopicExplorer = ({ topic, setTopic, llmKey, onClose }) => {
     setIsTyping(true);
 
     try {
-      const response = await axios.post('http://localhost:8000/brainstorm-topic', {
+      const response = await axios.post('https://ai-podcast-generator-rpc4.onrender.com/brainstorm-topic', {
         history: chatHistory,
         user_input: userInput,
         llm_api_key: llmKey
