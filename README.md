@@ -1,4 +1,4 @@
-# FonadaLabs Podcast Studio 🎙️
+# AI Podcast Studio 🎙️
 
 A professional AI-powered podcast generation platform that transforms topics or raw content into high-fidelity audio productions using advanced Indian language synthesis.
 
