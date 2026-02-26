@@ -1,0 +1,35 @@
+You can now view your AI Podcast Studio here: 👉 http://localhost:5173/
+
+Summary of fixes:
+Frontend Crash: Fixed the missing parenthesis in App.jsx that caused the build error.
+Backend Setup: Remember to use the Virtual Environment commands provided earlier to avoid the "externally-managed-environment" error.
+To recap, here's how to start everything:
+
+Terminal 1 (Backend):
+
+bash
+cd ~/Desktop/Podcast_Application/backend
+source venv/bin/activate  # Only if you've already created it
+python3 main.py
+
+Terminal 2 (Frontend):
+
+bash
+cd ~/Desktop/Podcast_Application/frontend
+npm run dev
+
+Terminal 3 (Worker):
+
+bash
+cd ~/Desktop/Podcast_Application/backend
+source venv/bin/activate
+rq worker podcast_tasks
+
+
+
+nstall Redis: sudo apt-get update && sudo apt-get install -y redis-server
+Start Redis: sudo service redis-server start
+
+sk_78f70adad7b29f6fdf5dd7399e3c661863768265bd30b09e
+
+AIzaSyDLm-YGa4ymqC8vDWiCS-a0n0zCzOh7en4
