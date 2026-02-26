@@ -250,7 +250,7 @@ async def audio_from_script(request: AudioRequest):
     
     return {
         "message": "Audio generated successfully", 
-        "audio_url": f"http://localhost:8000/audio/{output_filename}",
+        "audio_url": f"https://ai-podcast-generator-rpc4.onrender.com/audio/{output_filename}",
         "filename": output_filename
     }
 
