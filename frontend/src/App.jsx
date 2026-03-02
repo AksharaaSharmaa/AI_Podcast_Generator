@@ -10,6 +10,20 @@ import {
 const API_BASE_URL = window.location.hostname === 'localhost' ? 'http://localhost:8000' : 'https://ai-podcast-generator-qam2.onrender.com';
 
 const VOICES = {
+  English: [
+    "Naad", "Dhwani", "Vaanee", "Swara", "Taal", "Laya", "Raaga", "Geetika",
+    "Swarini", "Geet", "Sangeeta", "Raagini", "Madhura", "Komal", "Sangeet",
+    "Meghra", "Gandhar", "Madhyam", "Shruti", "Pancham", "Dhaivat", "Nishad",
+    "Tara", "Shadja", "Komalika", "Rishabh", "Mandra", "Tarana", "Swarika",
+    "Komala", "Geetini", "Teevra", "Chaitra", "Madhur", "Raagika", "Swarita",
+    "Vibhaag", "Gitanjali", "Aalap", "Sangeeti", "Taan", "Meend", "Raagita",
+    "Gamak", "Murki", "Khatka", "Andolan", "Sparsh", "Kampan", "Shrutika",
+    "Swaranjali", "Nada", "Lahar", "Tarang", "Dhwaniya", "Shrutini", "Swar",
+    "Geetanjali", "Raaginika", "Sangeetika", "Meghra2", "Swaroopa",
+    "Geetimala", "Naadayana", "Swarayana", "Layakari", "Taalayana", "Raag",
+    "Swaranjana", "Naadanika", "Dhwanika", "Swaraka", "Sangeetara",
+    "Layabaddha"
+  ],
   Hindi: [
     "Naad", "Dhwani", "Vaanee", "Swara", "Taal", "Laya", "Raaga", "Geetika",
     "Swarini", "Geet", "Sangeeta", "Raagini", "Madhura", "Komal", "Sangeet",
@@ -24,13 +38,11 @@ const VOICES = {
     "Swaranjana", "Naadanika", "Dhwanika", "Swaraka", "Sangeetara",
     "Layabaddha"
   ],
-
   Tamil: [
     "Vaani", "Isai", "Thalam", "Swaram", "Madhuram", "Naadham", "Ragam",
     "Pallavi", "Komalam", "Raagamalika", "Geetham", "Taalam", "Dhwani",
     "Sangeetham", "Raagaratna", "Shruti"
   ],
-
   Telugu: [
     "Naadamu", "Dhwani", "Taalam", "Geetamu", "Raagamalika", "Sangeetamu",
     "Vaani", "Swaramu", "Layamu", "Taalabaddha", "Raagapriya", "Swarajathi",
@@ -89,7 +101,6 @@ function App() {
 
   // Logic for Studio
   const addSpeaker = () => {
-    if (speakers.length >= 4) return;
     setSpeakers([...speakers, { name: `Speaker ${speakers.length + 1}`, voice: VOICES[language][0], language }]);
   };
 
@@ -672,7 +683,7 @@ const StudioView = ({
               <section className="glass-card">
                 <div className="flex-between" style={{ marginBottom: '1.5rem' }}>
                   <h2><Speaker size={22} className="gradient-text" /> Voice Artists</h2>
-                  <button className="primary" onClick={addSpeaker} disabled={speakers.length >= 4} style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }}><Plus size={14} /> Add</button>
+                  <button className="primary" onClick={addSpeaker} style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }}><Plus size={14} /> Add</button>
                 </div>
                 {speakers.map((s, i) => (
                   <div key={i} className="speaker-card">
