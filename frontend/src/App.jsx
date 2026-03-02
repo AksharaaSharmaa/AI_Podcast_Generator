@@ -7,6 +7,8 @@ import {
   ArrowRight, Mic2, Star, PlayCircle, RotateCw, Check, Pause, Upload
 } from 'lucide-react';
 
+const API_BASE_URL = window.location.hostname === 'localhost' ? 'http://localhost:8000' : 'https://ai-podcast-generator-qam2.onrender.com';
+
 const VOICES = {
   Hindi: [
     "Naad", "Dhwani", "Vaanee", "Swara", "Taal", "Laya", "Raaga", "Geetika",
@@ -105,7 +107,7 @@ function App() {
     setError('');
     setIsGenerating(true);
     try {
-      const response = await axios.post('https://ai-podcast-generator-qam2.onrender.com/generate-script', {
+      const response = await axios.post(`${API_BASE_URL}/generate-script`, {
         input_mode: inputMode, topic, content, language, duration, speakers, llm_api_key: llmKey
       });
       setGeneratedScript(response.data.script);
@@ -120,7 +122,7 @@ function App() {
   const regeneratePart = async (index) => {
     setIsGenerating(true);
     try {
-      const response = await axios.post('https://ai-podcast-generator-qam2.onrender.com/regenerate-script-part', {
+      const response = await axios.post(`${API_BASE_URL}/regenerate-script-part`, {
         script: generatedScript, index, llm_api_key: llmKey, language
       });
       const newScript = [...generatedScript];
@@ -144,7 +146,7 @@ function App() {
     setStudioStep('processing');
     try {
       console.log('Sending audio generation request with script:', generatedScript);
-      const response = await axios.post('https://ai-podcast-generator-qam2.onrender.com/audio-from-script', {
+      const response = await axios.post(`${API_BASE_URL}/audio-from-script`, {
         script: generatedScript, speakers, channels, fonada_api_key: fonadaKey
       });
       console.log('Backend response:', response.data);
@@ -174,7 +176,7 @@ function App() {
     formData.append('file', file);
 
     try {
-      const response = await axios.post('https://ai-podcast-generator-qam2.onrender.com/upload-content', formData, {
+      const response = await axios.post(`${API_BASE_URL}/upload-content`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
       setContent(response.data.content);
@@ -197,7 +199,7 @@ function App() {
     formData.append('title', topic || 'My Podcast');
 
     try {
-      const response = await axios.post('https://ai-podcast-generator-qam2.onrender.com/create-video', formData, {
+      const response = await axios.post(`${API_BASE_URL}/create-video`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
       setVideoUrl(response.data.video_url);
@@ -220,7 +222,7 @@ function App() {
     setError('');
     setIsPublishing(true);
     try {
-      const response = await axios.post('https://ai-podcast-generator-qam2.onrender.com/publish-to-rss', {
+      const response = await axios.post(`${API_BASE_URL}/publish-to-rss`, {
         title: topic || 'Untitled Episode',
         description: `Generated podcast about ${topic || 'AI'}`,
         audio_url: audioUrl,
@@ -407,7 +409,7 @@ const TopicExplorer = ({ topic, setTopic, llmKey, onClose }) => {
     setIsTyping(true);
 
     try {
-      const response = await axios.post('https://ai-podcast-generator-qam2.onrender.com/brainstorm-topic', {
+      const response = await axios.post(`${API_BASE_URL}/brainstorm-topic`, {
         history: chatHistory,
         user_input: userInput,
         llm_api_key: llmKey
@@ -896,7 +898,7 @@ const StudioView = ({
                         style={{ width: '100%', background: '#fff', color: '#000', border: 'none', fontWeight: 600 }}
                         onClick={() => window.open('https://creators.spotify.com/dash/submit', '_blank')}
                       >
-                        <ArrowRight size={16} /> Open Spotify for Podcasters
+                        <ArrowRight size={16} /> Open Spotify for Creators
                       </button>
                     </div>
                   )}
