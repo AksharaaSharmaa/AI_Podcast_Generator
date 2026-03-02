@@ -18,6 +18,18 @@ from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import numpy as np
 import xml.etree.ElementTree as ET
 from datetime import datetime
+import logging
+
+# Configure Logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler("backend.log"),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger("api")
 
 app = FastAPI(title="AI Podcast Generator")
 
@@ -474,34 +486,40 @@ async def audio_from_script(request: AudioRequest, fastapi_request: Request):
     audio_files = []
     session_id = str(uuid.uuid4())
     
-    tasks = []
-    for i, line in enumerate(request.script):
-        line_speaker = line.speaker.strip().lower()
-        speaker_info = None
-        
-        for s in request.speakers:
-            if s.name.strip().lower() == line_speaker:
-                speaker_info = s
-                break
-        
-        if not speaker_info:
-            speaker_info = request.speakers[i % len(request.speakers)]
-            
-        text_chunks = split_text(line.text)
-        
-        for j, chunk in enumerate(text_chunks):
-            chunk_id = f"{session_id}_{i}_{j}"
-            tasks.append(generate_audio_chunk(
-                chunk, 
-                speaker_info.voice, 
-                speaker_info.language, 
-                request.fonada_api_key, 
-                chunk_id
-            ))
-    
+    logger.info(f"Starting sequential audio generation for session {session_id}")
     try:
-        audio_files = await asyncio.gather(*tasks)
+        for i, line in enumerate(request.script):
+            line_speaker = line.speaker.strip().lower()
+            speaker_info = None
+            
+            for s in request.speakers:
+                if s.name.strip().lower() == line_speaker:
+                    speaker_info = s
+                    break
+            
+            if not speaker_info:
+                speaker_info = request.speakers[i % len(request.speakers)]
+                
+            text_chunks = split_text(line.text)
+            
+            for j, chunk in enumerate(text_chunks):
+                chunk_id = f"{session_id}_{i}_{j}"
+                logger.info(f"Generating chunk {chunk_id}...")
+                file_path = await generate_audio_chunk(
+                    chunk, 
+                    speaker_info.voice, 
+                    speaker_info.language, 
+                    request.fonada_api_key, 
+                    chunk_id
+                )
+                if os.path.exists(file_path):
+                    logger.info(f"Chunk {chunk_id} generated. Size: {os.path.getsize(file_path)} bytes")
+                    audio_files.append(file_path)
+                else:
+                    logger.error(f"Chunk {chunk_id} FAILED to generate.")
+
     except Exception as e:
+        logger.error(f"Audio generation error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Audio generation failed: {str(e)}")
 
     # 2. Concatenate using FFmpeg
@@ -513,13 +531,16 @@ async def audio_from_script(request: AudioRequest, fastapi_request: Request):
         for audio_file in audio_files:
             f.write(f"file '{os.path.basename(audio_file)}'\n")
             
+    logger.info(f"Starting concatenation for {output_filename}...")
     try:
         channel_count = "1" if request.channels == "mono" else "2"
-        subprocess.run([
+        result = subprocess.run([
             "ffmpeg", "-f", "concat", "-safe", "0", "-i", list_file_path, 
             "-ac", channel_count, "-q:a", "0", "-map", "a", output_path, "-y"
         ], check=True, capture_output=True, text=True)
+        logger.info(f"FFmpeg success. Output file size: {os.path.getsize(output_path)} bytes")
     except subprocess.CalledProcessError as e:
+        logger.error(f"FFmpeg error: {e.stderr}")
         raise HTTPException(status_code=500, detail=f"Audio concatenation failed: {e.stderr}")
     
     for f in audio_files:
