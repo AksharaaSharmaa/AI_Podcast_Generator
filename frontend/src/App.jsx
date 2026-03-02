@@ -4,12 +4,10 @@ import {
   Plus, Trash2, Play, Download, Settings,
   Loader2, Sun, Moon, Sparkles, MessageSquare,
   Speaker, FileText, Globe, Home,
-  ArrowRight, Mic2, Star, PlayCircle, RotateCw, Check, Pause
+  ArrowRight, Mic2, Star, PlayCircle, RotateCw, Check, Pause, Upload
 } from 'lucide-react';
 
 const VOICES = {
-  "Pure English": ["Naad", "Dhwani"],
-  "English (Mix)": ["Naad", "Dhwani"],
   Hindi: [
     "Naad", "Dhwani", "Vaanee", "Swara", "Taal", "Laya", "Raaga", "Geetika",
     "Swarini", "Geet", "Sangeeta", "Raagini", "Madhura", "Komal", "Sangeet",
@@ -24,11 +22,13 @@ const VOICES = {
     "Swaranjana", "Naadanika", "Dhwanika", "Swaraka", "Sangeetara",
     "Layabaddha"
   ],
+
   Tamil: [
     "Vaani", "Isai", "Thalam", "Swaram", "Madhuram", "Naadham", "Ragam",
     "Pallavi", "Komalam", "Raagamalika", "Geetham", "Taalam", "Dhwani",
     "Sangeetham", "Raagaratna", "Shruti"
   ],
+
   Telugu: [
     "Naadamu", "Dhwani", "Taalam", "Geetamu", "Raagamalika", "Sangeetamu",
     "Vaani", "Swaramu", "Layamu", "Taalabaddha", "Raagapriya", "Swarajathi",
@@ -63,6 +63,15 @@ function App() {
   const [fonadaKey, setFonadaKey] = useState('');
   const [llmKey, setLlmKey] = useState('');
 
+  // Publish States
+  const [publishPlatform, setPublishPlatform] = useState(''); // 'youtube', 'spotify'
+  const [audioFilename, setAudioFilename] = useState('');
+  const [videoUrl, setVideoUrl] = useState('');
+  const [isVideoGenerating, setIsVideoGenerating] = useState(false);
+  const [rssUrl, setRssUrl] = useState('');
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [userEmail, setUserEmail] = useState('');
+
   // Topic Explorer State
   const [showTopicExplorer, setShowTopicExplorer] = useState(false);
 
@@ -96,7 +105,7 @@ function App() {
     setError('');
     setIsGenerating(true);
     try {
-      const response = await axios.post('https://ai-podcast-generator-qam2.onrender.com/generate-script', {
+      const response = await axios.post('http://localhost:8000/generate-script', {
         input_mode: inputMode, topic, content, language, duration, speakers, llm_api_key: llmKey
       });
       setGeneratedScript(response.data.script);
@@ -111,7 +120,7 @@ function App() {
   const regeneratePart = async (index) => {
     setIsGenerating(true);
     try {
-      const response = await axios.post('https://ai-podcast-generator-qam2.onrender.com/regenerate-script-part', {
+      const response = await axios.post('http://localhost:8000/regenerate-script-part', {
         script: generatedScript, index, llm_api_key: llmKey, language
       });
       const newScript = [...generatedScript];
@@ -135,12 +144,13 @@ function App() {
     setStudioStep('processing');
     try {
       console.log('Sending audio generation request with script:', generatedScript);
-      const response = await axios.post('https://ai-podcast-generator-qam2.onrender.com/audio-from-script', {
+      const response = await axios.post('http://localhost:8000/audio-from-script', {
         script: generatedScript, speakers, channels, fonada_api_key: fonadaKey
       });
       console.log('Backend response:', response.data);
       if (response.data.audio_url) {
         setAudioUrl(response.data.audio_url);
+        setAudioFilename(response.data.filename);
         setStudioStep('done');
       } else {
         throw new Error('Backend returned success but no audio URL.');
@@ -151,6 +161,77 @@ function App() {
       setStudioStep('script');
     } finally {
       setIsGenerating(false);
+    }
+  };
+
+  const handleFileUpload = async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    setError('');
+    setIsGenerating(true);
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const response = await axios.post('http://localhost:8000/upload-content', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      setContent(response.data.content);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const generateVideo = async () => {
+    if (!audioFilename) {
+      setError('Audio filename missing.');
+      return;
+    }
+    setError('');
+    setIsVideoGenerating(true);
+    setVideoUrl('');
+
+    const formData = new FormData();
+    formData.append('audio_filename', audioFilename);
+    formData.append('title', topic || 'My Podcast');
+
+    try {
+      const response = await axios.post('http://localhost:8000/create-video', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      setVideoUrl(response.data.video_url);
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Video generation failed.');
+    } finally {
+      setIsVideoGenerating(false);
+    }
+  };
+
+  const publishToSpotify = async () => {
+    if (!audioUrl || !audioFilename) {
+      setError('Audio generation not complete.');
+      return;
+    }
+    if (!userEmail || !userEmail.includes('@')) {
+      setError('Please provide a valid email to generate your RSS feed.');
+      return;
+    }
+    setError('');
+    setIsPublishing(true);
+    try {
+      const response = await axios.post('http://localhost:8000/publish-to-rss', {
+        title: topic || 'Untitled Episode',
+        description: `Generated podcast about ${topic || 'AI'}`,
+        audio_url: audioUrl,
+        filename: audioFilename,
+        email: userEmail
+      });
+      setRssUrl(response.data.rss_url);
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Failed to publish to RSS.');
+    } finally {
+      setIsPublishing(false);
     }
   };
 
@@ -202,6 +283,17 @@ function App() {
             error={error}
             showTopicExplorer={showTopicExplorer}
             setShowTopicExplorer={setShowTopicExplorer}
+            handleFileUpload={handleFileUpload}
+            publishPlatform={publishPlatform}
+            setPublishPlatform={setPublishPlatform}
+            generateVideo={generateVideo}
+            isVideoGenerating={isVideoGenerating}
+            videoUrl={videoUrl}
+            publishToSpotify={publishToSpotify}
+            isPublishing={isPublishing}
+            rssUrl={rssUrl}
+            userEmail={userEmail}
+            setUserEmail={setUserEmail}
           />
         )}
       </main>
@@ -315,7 +407,7 @@ const TopicExplorer = ({ topic, setTopic, llmKey, onClose }) => {
     setIsTyping(true);
 
     try {
-      const response = await axios.post('https://ai-podcast-generator-qam2.onrender.com/brainstorm-topic', {
+      const response = await axios.post('http://localhost:8000/brainstorm-topic', {
         history: chatHistory,
         user_input: userInput,
         llm_api_key: llmKey
@@ -444,7 +536,12 @@ const StudioView = ({
   speakers, setSpeakers, VOICES, fonadaKey, setFonadaKey,
   llmKey, setLlmKey, isGenerating, generateScript, regeneratePart, generateAudio,
   generatedScript, setGeneratedScript, updateSpeaker, addSpeaker,
-  audioUrl, setAudioUrl, error, showTopicExplorer, setShowTopicExplorer
+  audioUrl, setAudioUrl, error, showTopicExplorer, setShowTopicExplorer,
+  handleFileUpload,
+  publishPlatform, setPublishPlatform,
+  generateVideo, isVideoGenerating, videoUrl,
+  publishToSpotify, isPublishing, rssUrl,
+  userEmail, setUserEmail
 }) => {
   return (
     <div className="studio-container" style={{ paddingTop: '3rem' }}>
@@ -479,6 +576,7 @@ const StudioView = ({
                   <div className="toggle-group">
                     <div className={`toggle-item ${inputMode === 'topic' ? 'active' : ''}`} onClick={() => setInputMode('topic')}><Globe size={14} /> Topic</div>
                     <div className={`toggle-item ${inputMode === 'content' ? 'active' : ''}`} onClick={() => setInputMode('content')}><FileText size={14} /> Content</div>
+                    <div className={`toggle-item ${inputMode === 'upload' ? 'active' : ''}`} onClick={() => setInputMode('upload')}><Upload size={14} /> Upload</div>
                   </div>
                 </div>
                 {inputMode === 'topic' ? (
@@ -503,8 +601,44 @@ const StudioView = ({
                       />
                     )}
                   </div>
-                ) : (
+                ) : inputMode === 'content' ? (
                   <div className="form-group"><label>Content</label><textarea placeholder="Paste text here..." rows={5} value={content} onChange={(e) => setContent(e.target.value)} /></div>
+                ) : (
+                  <div className="form-group">
+                    <label>Upload Document (.pdf, .txt)</label>
+                    <div style={{
+                      border: '2px dashed var(--card-border)',
+                      borderRadius: '1rem',
+                      padding: '2rem',
+                      textAlign: 'center',
+                      background: 'rgba(255,255,255,0.02)',
+                      cursor: 'pointer',
+                      transition: 'all 0.3s ease'
+                    }} onClick={() => document.getElementById('fileUpload').click()}>
+                      <Upload size={32} style={{ marginBottom: '1rem', opacity: 0.5 }} />
+                      <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
+                        {content ? "File uploaded and processed!" : "Click to select a file"}
+                      </p>
+                      <input
+                        id="fileUpload"
+                        type="file"
+                        hidden
+                        accept=".pdf,.txt"
+                        onChange={handleFileUpload}
+                      />
+                    </div>
+                    {content && (
+                      <div style={{ marginTop: '1rem' }}>
+                        <label style={{ fontSize: '0.8rem' }}>Extracted Content Preview</label>
+                        <textarea
+                          rows={4}
+                          value={content}
+                          onChange={(e) => setContent(e.target.value)}
+                          style={{ fontSize: '0.85rem' }}
+                        />
+                      </div>
+                    )}
+                  </div>
                 )}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
                   <div className="form-group"><label>Language</label><select value={language} onChange={(e) => {
@@ -633,6 +767,142 @@ const StudioView = ({
                 <p style={{ color: '#ef4444', fontWeight: 600 }}>Audio generated but the file URL is missing. Please try again or check logs.</p>
               </div>
             )}
+
+            <div style={{ marginTop: '2.5rem', paddingTop: '2rem', borderTop: '1px solid var(--card-border)' }}>
+              <h4 style={{ marginBottom: '1.5rem', textAlign: 'center' }}>Choose Publishing Platform</h4>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+                <div
+                  className={`glass-card platform-card ${publishPlatform === 'youtube' ? 'active' : ''}`}
+                  style={{
+                    cursor: 'pointer',
+                    padding: '1.5rem',
+                    textAlign: 'center',
+                    border: publishPlatform === 'youtube' ? '2px solid #ff0000' : '1px solid var(--card-border)',
+                    transition: 'all 0.3s ease'
+                  }}
+                  onClick={() => setPublishPlatform('youtube')}
+                >
+                  <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>📺</div>
+                  <strong>YouTube</strong>
+                  <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Generate video with background</p>
+                </div>
+                <div
+                  className={`glass-card platform-card ${publishPlatform === 'spotify' ? 'active' : ''}`}
+                  style={{
+                    cursor: 'pointer',
+                    padding: '1.5rem',
+                    textAlign: 'center',
+                    border: publishPlatform === 'spotify' ? '2px solid #1DB954' : '1px solid var(--card-border)',
+                    transition: 'all 0.3s ease'
+                  }}
+                  onClick={() => setPublishPlatform('spotify')}
+                >
+                  <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>🎧</div>
+                  <strong>Spotify</strong>
+                  <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Generate RSS Feed for Spotify</p>
+                </div>
+              </div>
+
+              {publishPlatform === 'youtube' && (
+                <div style={{ marginTop: '2rem', animation: 'slideUp 0.4s ease' }}>
+                  <p style={{ color: 'var(--text-muted)', marginBottom: '1.5rem', textAlign: 'center' }}>
+                    Ready to generate your video with a beautiful waveform and podcast title!
+                  </p>
+
+                  <button
+                    className="primary"
+                    style={{ width: '100%', marginTop: '1rem', height: '3.5rem', background: '#ff0000' }}
+                    onClick={generateVideo}
+                    disabled={isVideoGenerating}
+                  >
+                    {isVideoGenerating ? <><Loader2 className="loading-pulse" /> Generating Video...</> : <><Sparkles size={18} /> Create YouTube Video</>}
+                  </button>
+
+                  {videoUrl && (
+                    <div style={{ marginTop: '2rem', animation: 'fadeIn 0.5s ease' }}>
+                      <h4 style={{ marginBottom: '1rem' }}>Generated Video</h4>
+                      <video controls src={videoUrl} style={{ width: '100%', borderRadius: '1rem', border: '1px solid var(--primary)' }} />
+                      <a href={videoUrl} download style={{ display: 'block', marginTop: '1rem' }}>
+                        <button className="secondary" style={{ width: '100%' }}><Download size={16} /> Download MP4</button>
+                      </a>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {publishPlatform === 'spotify' && (
+                <div style={{ marginTop: '2rem', animation: 'slideUp 0.4s ease' }}>
+                  <p style={{ color: 'var(--text-muted)', marginBottom: '1.5rem', textAlign: 'center' }}>
+                    Generate a unique RSS feed tied to your email.
+                  </p>
+
+                  <div className="form-group" style={{ maxWidth: '400px', margin: '0 auto 1.5rem' }}>
+                    <label>Your Email (for Spotify Verification)</label>
+                    <input
+                      type="email"
+                      placeholder="e.g. you@example.com"
+                      value={userEmail}
+                      onChange={(e) => setUserEmail(e.target.value)}
+                    />
+                  </div>
+
+                  <button
+                    className="primary"
+                    style={{ width: '100%', marginTop: '1rem', height: '3.5rem', background: '#1DB954' }}
+                    onClick={publishToSpotify}
+                    disabled={isPublishing}
+                  >
+                    {isPublishing ? <><Loader2 className="loading-pulse" /> Generating Feed...</> : <><Sparkles size={18} /> Publish to My RSS Feed</>}
+                  </button>
+
+                  {rssUrl && (
+                    <div style={{
+                      marginTop: '2rem',
+                      padding: '1.5rem',
+                      background: 'rgba(29, 185, 84, 0.1)',
+                      border: '1px solid #1DB954',
+                      borderRadius: '1rem',
+                      animation: 'fadeIn 0.5s ease'
+                    }}>
+                      <div className="flex-between" style={{ marginBottom: '1rem' }}>
+                        <h4 style={{ color: '#1DB954', margin: 0 }}>RSS Feed Live!</h4>
+                        <Check size={20} style={{ color: '#1DB954' }} />
+                      </div>
+                      <p style={{ fontSize: '0.85rem', marginBottom: '1.2rem' }}>Unique Feed URL generated. Submit this to Spotify for Podcasters once to link your shows.</p>
+
+                      <div style={{
+                        display: 'flex',
+                        gap: '0.5rem',
+                        background: 'var(--input-bg)',
+                        padding: '0.8rem',
+                        borderRadius: '0.6rem',
+                        border: '1px solid var(--card-border)',
+                        marginBottom: '1.5rem'
+                      }}>
+                        <code style={{ fontSize: '0.8rem', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>{rssUrl}</code>
+                        <button
+                          className="secondary"
+                          style={{ padding: '0.2rem 0.6rem', height: 'auto', fontSize: '0.7rem' }}
+                          onClick={() => {
+                            navigator.clipboard.writeText(rssUrl);
+                          }}
+                        >
+                          Copy
+                        </button>
+                      </div>
+
+                      <button
+                        className="primary"
+                        style={{ width: '100%', background: '#fff', color: '#000', border: 'none', fontWeight: 600 }}
+                        onClick={() => window.open('https://podcasters.spotify.com/dash/submit-feed', '_blank')}
+                      >
+                        <ArrowRight size={16} /> Open Spotify for Podcasters
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
           <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', marginTop: '3rem' }}>
