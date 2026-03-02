@@ -4,18 +4,100 @@ import asyncio
 import uuid
 import subprocess
 import requests
-from typing import List
-from fastapi import FastAPI, HTTPException, Request
+import random
+from typing import List, Dict, Optional
+from fastapi import FastAPI, HTTPException, Body, UploadFile, File, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import google.generativeai as genai
-
-# -----------------------------------
-# App Initialization
-# -----------------------------------
+import PyPDF2
+import io
+from moviepy import ImageClip, AudioFileClip, VideoClip
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
+import numpy as np
+import xml.etree.ElementTree as ET
+from datetime import datetime
 
 app = FastAPI(title="AI Podcast Generator")
+
+# Mount Static Files
+TEMP_DIR = "temp_audio"
+os.makedirs(TEMP_DIR, exist_ok=True)
+
+app.mount("/audio", StaticFiles(directory=TEMP_DIR), name="audio")
+
+def get_user_dir(email: str):
+    import hashlib
+    email_hash = hashlib.md5(email.lower().strip().encode()).hexdigest()
+    user_dir = os.path.join(TEMP_DIR, email_hash)
+    os.makedirs(user_dir, exist_ok=True)
+    return user_dir, email_hash
+
+def load_podcasts(user_dir: str):
+    podcasts_file = os.path.join(user_dir, "podcasts.json")
+    if os.path.exists(podcasts_file):
+        with open(podcasts_file, "r") as f:
+            return json.load(f)
+    return []
+
+def save_podcasts(user_dir: str, podcasts: list):
+    podcasts_file = os.path.join(user_dir, "podcasts.json")
+    with open(podcasts_file, "w") as f:
+        json.dump(podcasts, f, indent=4)
+
+def update_rss_feed(user_dir: str, email_hash: str, email: str, podcasts: list, base_url: str):
+    ET.register_namespace('itunes', 'http://www.itunes.com/dtds/podcast-1.0.dtd')
+    rss = ET.Element("rss", version="2.0")
+    rss.set("xmlns:itunes", "http://www.itunes.com/dtds/podcast-1.0.dtd")
+    rss.set("xmlns:content", "http://purl.org/rss/1.0/modules/content/")
+
+    channel = ET.SubElement(rss, "channel")
+    
+    ET.SubElement(channel, "title").text = f"AI Podcast Studio - {email}"
+    ET.SubElement(channel, "link").text = base_url
+    ET.SubElement(channel, "description").text = f"Professional AI-generated conversations for {email}"
+    ET.SubElement(channel, "language").text = "en-us"
+    ET.SubElement(channel, "itunes:author").text = "FonadaLabs AI"
+    ET.SubElement(channel, "itunes:type").text = "episodic"
+    
+    ET.SubElement(channel, "itunes:explicit").text = "no"
+    category = ET.SubElement(channel, "itunes:category")
+    category.set("text", "Technology")
+    
+    owner = ET.SubElement(channel, "itunes:owner")
+    ET.SubElement(owner, "itunes:name").text = email.split('@')[0]
+    ET.SubElement(owner, "itunes:email").text = email
+    
+    image = ET.SubElement(channel, "itunes:image")
+    image.set("href", "https://images.unsplash.com/photo-1590602847861-f357a9332bbc?w=1400&h=1400&fit=crop")
+    
+    for pod in podcasts:
+        item = ET.SubElement(channel, "item")
+        ET.SubElement(item, "title").text = pod.get("title", "Untitled Episode")
+        ET.SubElement(item, "itunes:author").text = "AI Host"
+        ET.SubElement(item, "description").text = pod.get("description", "No description")
+        ET.SubElement(item, "pubDate").text = pod.get("date", datetime.now().strftime("%a, %d %b %Y %H:%M:%S GMT"))
+        
+        enclosure = ET.SubElement(item, "enclosure")
+        # Build dynamic audio URL
+        filename = pod.get("filename")
+        audio_url = f"{base_url}/audio/{email_hash}/{filename}"
+        enclosure.set("url", audio_url)
+        enclosure.set("type", "audio/mpeg")
+        enclosure.set("length", "0")
+        
+        guid = ET.SubElement(item, "guid")
+        guid.text = pod.get("id")
+        guid.set("isPermaLink", "false")
+        
+        ET.SubElement(item, "itunes:duration").text = "00:10:00"
+        ET.SubElement(item, "itunes:explicit").text = "no"
+
+    rss_file = os.path.join(user_dir, "rss.xml")
+    tree = ET.ElementTree(rss)
+    tree.write(rss_file, encoding="utf-8", xml_declaration=True)
+    return f"{base_url}/audio/{email_hash}/rss.xml"
 
 app.add_middleware(
     CORSMiddleware,
@@ -24,18 +106,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# -----------------------------------
-# Temp Audio Directory
-# -----------------------------------
-
-TEMP_DIR = "temp_audio"
-os.makedirs(TEMP_DIR, exist_ok=True)
-app.mount("/audio", StaticFiles(directory=TEMP_DIR), name="audio")
-
-# -----------------------------------
-# Data Models
-# -----------------------------------
 
 class Speaker(BaseModel):
     name: str
@@ -47,18 +117,18 @@ class ScriptLine(BaseModel):
     text: str
 
 class ScriptRequest(BaseModel):
-    input_mode: str
+    input_mode: str  # "topic" or "content"
     topic: str = ""
     content: str = ""
     language: str
-    duration: int
+    duration: int  # in minutes
     speakers: List[Speaker]
     llm_api_key: str
 
 class AudioRequest(BaseModel):
     script: List[ScriptLine]
     speakers: List[Speaker]
-    channels: str
+    channels: str  # "mono" or "stereo"
     fonada_api_key: str
 
 class RegenerateRequest(BaseModel):
@@ -68,22 +138,26 @@ class RegenerateRequest(BaseModel):
     language: str
 
 class BrainstormMessage(BaseModel):
-    role: str
+    role: str  # "user" or "model"
     content: str
 
 class BrainstormRequest(BaseModel):
     history: List[BrainstormMessage]
     user_input: str
+    user_input: str
     llm_api_key: str
 
-# -----------------------------------
-# Utility
-# -----------------------------------
+class PublishRequest(BaseModel):
+    title: str
+    description: str
+    audio_url: str
+    filename: str
+    email: str
 
 def split_text(text: str, max_chars: int = 450) -> List[str]:
     chunks = []
     while len(text) > max_chars:
-        split_pos = text.rfind(" ", 0, max_chars)
+        split_pos = text.rfind(' ', 0, max_chars)
         if split_pos == -1:
             split_pos = max_chars
         chunks.append(text[:split_pos].strip())
@@ -92,211 +166,373 @@ def split_text(text: str, max_chars: int = 450) -> List[str]:
         chunks.append(text)
     return chunks
 
-async def generate_audio_chunk(text, voice, language, api_key, chunk_id):
+async def generate_audio_chunk(text: str, voice: str, language: str, api_key: str, chunk_id: str):
     url = "https://api.fonada.ai/tts/generate-audio-large"
-
     headers = {
-        "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}"
     }
-
-    payload = {
+    # Normalize language for Fonada TTS
+    normalized_lang = language
+    if "English" in language:
+        normalized_lang = "English"
+        
+    data = {
         "input": text,
         "voice": voice,
-        "language": language,
+        "language": normalized_lang
     }
-
-    response = requests.post(url, headers=headers, json=payload)
-
+    
+    response = requests.post(url, headers=headers, json=data)
     if response.status_code != 200:
-        raise HTTPException(
-            status_code=response.status_code,
-            detail=f"Fonada TTS error: {response.text}",
-        )
-
+        raise HTTPException(status_code=response.status_code, detail=f"Fonada TTS error: {response.text}")
+    
     file_path = os.path.join(TEMP_DIR, f"{chunk_id}.mp3")
     with open(file_path, "wb") as f:
         f.write(response.content)
-
     return file_path
 
-# -----------------------------------
-# Routes
-# -----------------------------------
+def generate_waveform_video(audio_path, title):
+    audio = AudioFileClip(audio_path)
+    duration = audio.duration
+    
+    width, height = 1280, 720
+    fps = 24
+    
+    # 1. Premium Mesh Background (Dark Indigo with soft radial glow)
+    def create_premium_bg():
+        img = Image.new("RGBA", (width, height), (15, 10, 35, 255))
+        draw = ImageDraw.Draw(img)
+        glow_size = 900
+        glow_img = Image.new("RGBA", (glow_size, glow_size), (0, 0, 0, 0))
+        g_draw = ImageDraw.Draw(glow_img)
+        for i in range(glow_size//2, 0, -5):
+            alpha = int(40 * (1 - i / (glow_size/2)))
+            g_draw.ellipse([glow_size//2 - i, glow_size//2 - i, glow_size//2 + i, glow_size//2 + i], 
+                          fill=(100, 80, 255, alpha))
+        img.paste(glow_img, ((width - glow_size)//2, (height - glow_size)//2), glow_img)
+        return img
 
-@app.get("/")
-async def health():
-    return {"status": "running"}
+    bg_img_base = create_premium_bg()
+
+    # Audio Data
+    audio_data = audio.to_soundarray(fps=44100)
+    if len(audio_data.shape) > 1:
+        audio_data = np.mean(audio_data, axis=1)
+
+    num_bars = 90
+    bar_width = 8
+    gap = 6
+    max_height = 200
+    centerY = height // 2 - 40
+    bars_x_start = (width - (num_bars * (bar_width + gap))) // 2
+
+    # Particle System
+    particles = []
+    for _ in range(50):
+        particles.append({
+            'x': random.uniform(0, width),
+            'y': random.uniform(0, height),
+            'size': random.uniform(1, 3),
+            'speed': random.uniform(0.5, 1.5),
+            'alpha': random.randint(30, 100)
+        })
+
+    def get_rms(segment):
+        if len(segment) == 0: return 0
+        return np.sqrt(np.mean(np.square(segment)))
+
+    try:
+        font = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf", 55)
+    except:
+        font = ImageFont.load_default()
+
+    def make_frame(t):
+        frame_img = bg_img_base.copy()
+        draw = ImageDraw.Draw(frame_img)
+
+        # Particles
+        for p in particles:
+            p['y'] -= p['speed']
+            if p['y'] < 0: p['y'] = height
+            p_pos = (p['x'], p['y'])
+            draw.ellipse([p_pos[0], p_pos[1], p_pos[0] + p['size'], p_pos[1] + p['size']], 
+                        fill=(200, 200, 255, p['alpha']))
+
+        # Waveform with Reflection
+        for i in range(num_bars):
+            # Liquid effect
+            time_offset = (i - num_bars/2) * 0.003
+            t_bar = max(0, min(duration, t + time_offset))
+            
+            b_start = int(max(0, t_bar - 0.02) * 44100)
+            b_end = int(min(len(audio_data), t_bar + 0.02) * 44100)
+            b_seg = audio_data[b_start:b_end]
+            b_rms = get_rms(b_seg)
+            
+            h_val = int(b_rms * 700) + 4
+            h_val = min(h_val, max_height)
+            
+            x = bars_x_start + i * (bar_width + gap)
+            
+            # Glow Backdrop
+            draw.rounded_rectangle([x-2, centerY - h_val-2, x+bar_width+2, centerY + h_val+2], 
+                                  radius=4, fill=(80, 120, 255, 40))
+            
+            # Main Bar
+            color_val = int(min(255, 180 + b_rms * 300))
+            draw.rounded_rectangle([x, centerY - h_val, x+bar_width, centerY + h_val], 
+                                  radius=4, fill=(150, 200, color_val, 255))
+            
+            # Reflection
+            refl_y = centerY + 10
+            refl_h = h_val * 0.6
+            draw.rounded_rectangle([x, refl_y, x+bar_width, refl_y + refl_h], 
+                                  radius=4, fill=(100, 150, 255, 30))
+
+        # Title
+        title_y = 140 + 5 * np.sin(t * 2)
+        draw.text((width//2, title_y), title, font=font, fill=(255, 255, 255, 220), anchor="mm")
+
+        return np.array(frame_img.convert("RGB"))
+
+    video_clip = VideoClip(make_frame, duration=duration)
+    video_clip = video_clip.with_audio(audio)
+    
+    output_filename = f"video_{uuid.uuid4()}.mp4"
+    output_path = os.path.join(TEMP_DIR, output_filename)
+    
+    video_clip.write_videofile(output_path, fps=fps, codec="libx264", audio_codec="aac")
+    return output_path, output_filename
 
 @app.post("/generate-script")
 async def generate_script(request: ScriptRequest):
     try:
         genai.configure(api_key=request.llm_api_key)
         model = genai.GenerativeModel("gemini-2.5-flash")
+        
+        lang_instruction = request.language
+        if request.language == "Pure English":
+            lang_instruction = "strictly clear and professional English"
+        elif request.language == "English (Mix)":
+            lang_instruction = "English with occasional natural mix of local Indian context/terms"
 
         if request.input_mode == "topic":
-            prompt = (
-                f"Generate a podcast script about '{request.topic}' in {request.language}. "
-                f"Duration approximately {request.duration} minutes. "
-            )
+            prompt = f"Generate a podcast script about '{request.topic}' in {lang_instruction}. "
+            prompt += f"Research and include key facts. The podcast should be approximately {request.duration} minutes long. "
         else:
-            prompt = (
-                f"Convert this content into a conversational podcast script in {request.language}:\n\n"
-                f"{request.content}\n\n"
-                f"Duration: {request.duration} minutes."
-            )
-
+            prompt = f"Transform the following content into an interesting, highly conversational podcast script in {lang_instruction}: \n\n{request.content}\n\n"
+            prompt += f"The script should be approximately {request.duration} minutes long. "
+            
         speaker_names = [s.name for s in request.speakers]
-
-        prompt += (
-            f" Speakers: {', '.join(speaker_names)}. "
-            f"Use EXACT speaker names only. "
-            f"Return JSON format: {{'script': [{{'speaker': '', 'text': ''}}]}}"
-        )
-
+        prompt += "The speakers are: " + ", ".join(speaker_names) + ". "
+        prompt += f"IMPORTANT: Use these EXACT names [{', '.join(speaker_names)}] in the 'speaker' field of the JSON output. "
+        prompt += "Make the conversation flow naturally with interruptions, agreements, and dynamic interactions. "
+        prompt += "Return the script as a JSON list of objects with 'speaker' and 'text' fields. "
+        prompt += "Format: {'script': [{'speaker': 'Name', 'text': '...'}]}"
+        
         response = model.generate_content(
             prompt,
-            generation_config={"response_mime_type": "application/json"},
+            generation_config={"response_mime_type": "application/json"}
         )
-
+        
         content = response.text.strip()
-        content = content.replace("```json", "").replace("```", "").strip()
-
-        parsed = json.loads(content)
-
-        return {"script": parsed.get("script", [])}
-
+        if content.startswith("```json"):
+            content = content[7:-3].strip()
+        elif content.startswith("```"):
+            content = content[3:-3].strip()
+            
+        script_data = json.loads(content)
+        return {"script": script_data.get("script", [])}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Script generation failed: {str(e)}")
 
 @app.post("/regenerate-script-part")
 async def regenerate_script_part(request: RegenerateRequest):
     try:
         genai.configure(api_key=request.llm_api_key)
         model = genai.GenerativeModel("gemini-2.5-flash")
-
-        context = json.dumps(
-            [{"speaker": l.speaker, "text": l.text} for l in request.script]
-        )
-
+        
+        context = json.dumps([{"speaker": l.speaker, "text": l.text} for l in request.script])
         target = request.script[request.index]
-
-        prompt = (
-            f"Context:\n{context}\n\n"
-            f"Regenerate line {request.index} by {target.speaker} "
-            f"in {request.language}. Return ONLY the new text."
-        )
-
+        
+        prompt = f"Given this podcast script context: \n{context}\n\n"
+        prompt += f"Please regenerate the line at index {request.index} (currently by '{target.speaker}': '{target.text}'). "
+        prompt += f"Keep it in {request.language}. Improve the flow, make it more engaging or natural. "
+        prompt += "Return ONLY the new text for this specific line. Do not return JSON, just the text."
+        
         response = model.generate_content(prompt)
-
         return {"new_text": response.text.strip()}
-
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Regeneration failed: {str(e)}")
+
+@app.post("/upload-content")
+async def upload_content(file: UploadFile = File(...)):
+    try:
+        content_type = file.content_type
+        filename = file.filename
+        
+        if filename.endswith(".pdf"):
+            pdf_reader = PyPDF2.PdfReader(io.BytesIO(await file.read()))
+            text = ""
+            for page in pdf_reader.pages:
+                text += page.extract_text()
+            return {"content": text}
+        elif filename.endswith(".txt"):
+            content = await file.read()
+            return {"content": content.decode("utf-8")}
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported file type. Please upload .pdf or .txt")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"File processing failed: {str(e)}")
+
+@app.post("/create-video")
+async def create_video(
+    audio_filename: str = Form(...),
+    title: str = Form("AI Podcast")
+):
+    try:
+        audio_path = os.path.join(TEMP_DIR, audio_filename)
+        if not os.path.exists(audio_path):
+            raise HTTPException(status_code=404, detail="Audio file not found")
+
+        # Generate Animated Waveform Video
+        output_path, output_filename = generate_waveform_video(audio_path, title)
+        
+        return {
+            "message": "Video generated successfully", 
+            "video_url": f"http://localhost:8000/audio/{output_filename}",
+            "filename": output_filename
+        }
+    except Exception as e:
+        print(f"Video Generation Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Video generation failed: {str(e)}")
 
 @app.post("/brainstorm-topic")
 async def brainstorm_topic(request: BrainstormRequest):
     try:
+        print(f"Brainstorming topic with model gemini-2.5-flash. User input: {request.user_input}")
         genai.configure(api_key=request.llm_api_key)
         model = genai.GenerativeModel("gemini-2.5-flash")
-
-        history = [
-            {"role": m.role, "parts": [m.content]}
-            for m in request.history
-        ]
-
-        chat = model.start_chat(history=history)
-
-        instruction = (
-            "You are a podcast topic brainstorm assistant. "
-            "When a final topic is chosen, end with:\n"
-            "FINAL_TOPIC: <topic>"
-        )
-
-        response = chat.send_message(
-            f"{instruction}\nUser: {request.user_input}"
-        )
-
+        
+        chat_history = []
+        for msg in request.history:
+            chat_history.append({"role": msg.role, "parts": [msg.content]})
+            
+        chat = model.start_chat(history=chat_history)
+        
+        instruction = "You are a creative podcast topic brainstorm assistant. "
+        instruction += "Help the user refine their ideas into a catchy, specific podcast topic. "
+        instruction += "Use markdown: **bold** for titles/emphasis and bullet points for options. "
+        instruction += "When the user expresses a preference for a specific topic (e.g., 'I like the second one' or 'Go with the first'), "
+        instruction += "you MUST immediately confirm their choice and then END your message with a new line containing exactly: 'FINAL_TOPIC: [The Final Topic Name]'. "
+        instruction += "Do not ask more questions once a choice is made. Just confirm and provide the FINAL_TOPIC tag."
+        
+        full_prompt = f"{instruction}\n\nUser: {request.user_input}"
+        response = chat.send_message(full_prompt)
+        print(f"AI Response: {response.text}")
         return {"response": response.text}
-
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-# -----------------------------------
-# AUDIO ENDPOINT (MATCHES FRONTEND)
-# -----------------------------------
-
+        print(f"Brainstorming Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Brainstorming failed: {str(e)}")
 @app.post("/audio-from-script")
-async def audio_from_script(request: AudioRequest, req: Request):
+async def audio_from_script(request: AudioRequest):
+    # 1. Process Script into audio chunks
+    audio_files = []
+    session_id = str(uuid.uuid4())
+    
+    tasks = []
+    for i, line in enumerate(request.script):
+        line_speaker = line.speaker.strip().lower()
+        speaker_info = None
+        
+        for s in request.speakers:
+            if s.name.strip().lower() == line_speaker:
+                speaker_info = s
+                break
+        
+        if not speaker_info:
+            speaker_info = request.speakers[i % len(request.speakers)]
+            
+        text_chunks = split_text(line.text)
+        
+        for j, chunk in enumerate(text_chunks):
+            chunk_id = f"{session_id}_{i}_{j}"
+            tasks.append(generate_audio_chunk(
+                chunk, 
+                speaker_info.voice, 
+                speaker_info.language, 
+                request.fonada_api_key, 
+                chunk_id
+            ))
+    
     try:
-        session_id = str(uuid.uuid4())
-        tasks = []
-
-        for i, line in enumerate(request.script):
-            speaker = next(
-                (s for s in request.speakers if s.name.lower() == line.speaker.lower()),
-                request.speakers[i % len(request.speakers)],
-            )
-
-            for j, chunk in enumerate(split_text(line.text)):
-                chunk_id = f"{session_id}_{i}_{j}"
-                tasks.append(
-                    generate_audio_chunk(
-                        chunk,
-                        speaker.voice,
-                        speaker.language,
-                        request.fonada_api_key,
-                        chunk_id,
-                    )
-                )
-
         audio_files = await asyncio.gather(*tasks)
-
-        list_file = os.path.join(TEMP_DIR, f"list_{session_id}.txt")
-        with open(list_file, "w") as f:
-            for a in audio_files:
-                f.write(f"file '{os.path.basename(a)}'\n")
-
-        output_file = f"podcast_{session_id}.mp3"
-        output_path = os.path.join(TEMP_DIR, output_file)
-
-        subprocess.run(
-            [
-                "ffmpeg",
-                "-f",
-                "concat",
-                "-safe",
-                "0",
-                "-i",
-                list_file,
-                "-ac",
-                "1" if request.channels == "mono" else "2",
-                "-q:a",
-                "0",
-                output_path,
-                "-y",
-            ],
-            check=True,
-        )
-
-        for f in audio_files:
-            os.remove(f)
-        os.remove(list_file)
-
-        base_url = str(req.base_url).rstrip("/")
-
-        return {
-            "message": "Audio generated successfully",
-            "audio_url": f"{base_url}/audio/{output_file}",
-            "filename": output_file,
-        }
-
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Audio generation failed: {str(e)}")
 
-# -----------------------------------
-# Local Development
-# -----------------------------------
+    # 2. Concatenate using FFmpeg
+    output_filename = f"podcast_{session_id}.mp3"
+    output_path = os.path.join(TEMP_DIR, output_filename)
+    
+    list_file_path = os.path.join(TEMP_DIR, f"list_{session_id}.txt")
+    with open(list_file_path, "w") as f:
+        for audio_file in audio_files:
+            f.write(f"file '{os.path.basename(audio_file)}'\n")
+            
+    try:
+        channel_count = "1" if request.channels == "mono" else "2"
+        subprocess.run([
+            "ffmpeg", "-f", "concat", "-safe", "0", "-i", list_file_path, 
+            "-ac", channel_count, "-q:a", "0", "-map", "a", output_path, "-y"
+        ], check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as e:
+        raise HTTPException(status_code=500, detail=f"Audio concatenation failed: {e.stderr}")
+    
+    for f in audio_files:
+        os.remove(f)
+    os.remove(list_file_path)
+    
+    return {
+        "message": "Audio generated successfully", 
+        "audio_url": f"http://localhost:8000/audio/{output_filename}",
+        "filename": output_filename
+    }
+
+@app.post("/publish-to-rss")
+async def publish_to_rss(request: PublishRequest, fastapi_request: Request):
+    try:
+        user_dir, email_hash = get_user_dir(request.email)
+        
+        # Move audio file to user directory if it's currently in root TEMP_DIR
+        source_path = os.path.join(TEMP_DIR, request.filename)
+        dest_path = os.path.join(user_dir, request.filename)
+        if os.path.exists(source_path):
+            import shutil
+            shutil.move(source_path, dest_path)
+            
+        podcasts = load_podcasts(user_dir)
+        
+        new_episode = {
+            "id": str(uuid.uuid4()),
+            "title": request.title,
+            "description": request.description,
+            "filename": request.filename,
+            "date": datetime.now().strftime("%a, %d %b %Y %H:%M:%S GMT")
+        }
+        
+        podcasts.insert(0, new_episode) # Newest first
+        save_podcasts(user_dir, podcasts)
+        
+        base_url = f"{fastapi_request.url.scheme}://{fastapi_request.url.netloc}"
+        rss_url = update_rss_feed(user_dir, email_hash, request.email, podcasts, base_url)
+        
+        return {
+            "message": "Episode published to RSS feed successfully",
+            "rss_url": rss_url
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to publish to RSS: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
