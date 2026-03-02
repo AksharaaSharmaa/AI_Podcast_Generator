@@ -522,31 +522,82 @@ async def audio_from_script(request: AudioRequest, fastapi_request: Request):
         logger.error(f"Audio generation error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Audio generation failed: {str(e)}")
 
-    # 2. Concatenate using FFmpeg
+    # 2. Assemble audio with 2-second silence gaps and fade transitions using filter_complex
     output_filename = f"podcast_{session_id}.mp3"
     output_path = os.path.join(TEMP_DIR, output_filename)
-    
-    list_file_path = os.path.join(TEMP_DIR, f"list_{session_id}.txt")
-    with open(list_file_path, "w") as f:
-        for audio_file in audio_files:
-            f.write(f"file '{os.path.basename(audio_file)}'\n")
-            
-    logger.info(f"Starting concatenation for {output_filename}...")
+    channel_count = "1" if request.channels == "mono" else "2"
+    channel_layout = "mono" if channel_count == "1" else "stereo"
+    sample_rate = "24000"
+
+    N = len(audio_files)
+    logger.info(f"Assembling {N} chunks with fade-in/out and 2s silence gaps...")
+
     try:
-        channel_count = "1" if request.channels == "mono" else "2"
-        result = subprocess.run([
-            "ffmpeg", "-f", "concat", "-safe", "0", "-i", list_file_path, 
-            "-ac", channel_count, "-q:a", "0", "-map", "a", output_path, "-y"
-        ], check=True, capture_output=True, text=True)
-        logger.info(f"FFmpeg success. Output file size: {os.path.getsize(output_path)} bytes")
+        if N == 1:
+            # Single file - just encode directly
+            subprocess.run([
+                "ffmpeg", "-i", audio_files[0],
+                "-ac", channel_count, "-ar", sample_rate,
+                "-acodec", "libmp3lame", "-b:a", "128k",
+                output_path, "-y"
+            ], check=True, capture_output=True, text=True)
+        else:
+            # Build inputs list
+            inputs = []
+            for af in audio_files:
+                inputs += ["-i", af]
+
+            # Build filter_complex:
+            # Each chunk: apply fade-in at start and fade-out at end
+            # Insert anullsrc silence between each pair of chunks
+            filter_parts = []
+            concat_labels = ""
+
+            for i in range(N):
+                # Fade-in 20ms at start, fade-out 20ms at end (using areverse trick to avoid needing duration)
+                fade = (
+                    f"[{i}:a]"
+                    f"afade=t=in:st=0:d=0.02,"          # 20ms fade-in at start
+                    f"areverse,"                          # reverse so 'end' is now 'start'
+                    f"afade=t=in:st=0:d=0.02,"          # 20ms fade-in (= fade-out of original)
+                    f"areverse"                           # reverse back
+                    f"[a{i}]"
+                )
+                filter_parts.append(fade)
+                concat_labels += f"[a{i}]"
+                if i < N - 1:
+                    sil = f"anullsrc=r={sample_rate}:cl={channel_layout}:d=2[sil{i}]"
+                    filter_parts.append(sil)
+                    concat_labels += f"[sil{i}]"
+
+            total_segments = 2 * N - 1  # N audio chunks + (N-1) silences
+            filter_parts.append(f"{concat_labels}concat=n={total_segments}:v=0:a=1[out]")
+            filter_str = ";".join(filter_parts)
+
+            cmd = ["ffmpeg"] + inputs + [
+                "-filter_complex", filter_str,
+                "-map", "[out]",
+                "-ac", channel_count,
+                "-ar", sample_rate,
+                "-acodec", "libmp3lame", "-b:a", "128k",
+                output_path, "-y"
+            ]
+            result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+            logger.info(f"Assembly complete. Final MP3 size: {os.path.getsize(output_path)} bytes")
+
     except subprocess.CalledProcessError as e:
-        logger.error(f"FFmpeg error: {e.stderr}")
-        raise HTTPException(status_code=500, detail=f"Audio concatenation failed: {e.stderr}")
-    
-    for f in audio_files:
-        os.remove(f)
-    os.remove(list_file_path)
-    
+        logger.error(f"Audio assembly error: {e.stderr}")
+        raise HTTPException(status_code=500, detail=f"Audio assembly failed: {e.stderr}")
+    finally:
+        for f in audio_files:
+            if os.path.exists(f):
+                os.remove(f)
+        # Clean up any leftover WAV files from previous attempt
+        for f in audio_files:
+            wav = f.replace(".mp3", ".wav")
+            if os.path.exists(wav):
+                os.remove(wav)
+
     scheme = fastapi_request.headers.get("x-forwarded-proto", fastapi_request.url.scheme)
     base_url = f"{scheme}://{fastapi_request.url.netloc}"
     
