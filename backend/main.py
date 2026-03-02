@@ -410,20 +410,31 @@ async def upload_content(file: UploadFile = File(...)):
 
 @app.post("/create-video")
 async def create_video(
+    fastapi_request: Request,
     audio_filename: str = Form(...),
     title: str = Form("AI Podcast")
 ):
     try:
         audio_path = os.path.join(TEMP_DIR, audio_filename)
+        # Fallback: Search in user subdirectories if not found in root
+        if not os.path.exists(audio_path):
+            for root, dirs, files in os.walk(TEMP_DIR):
+                if audio_filename in files:
+                    audio_path = os.path.join(root, audio_filename)
+                    break
+
         if not os.path.exists(audio_path):
             raise HTTPException(status_code=404, detail="Audio file not found")
 
         # Generate Animated Waveform Video
         output_path, output_filename = generate_waveform_video(audio_path, title)
         
+        scheme = fastapi_request.headers.get("x-forwarded-proto", fastapi_request.url.scheme)
+        base_url = f"{scheme}://{fastapi_request.url.netloc}"
+        
         return {
             "message": "Video generated successfully", 
-            "video_url": f"http://localhost:8000/audio/{output_filename}",
+            "video_url": f"{base_url}/audio/{output_filename}",
             "filename": output_filename
         }
     except Exception as e:
@@ -458,7 +469,7 @@ async def brainstorm_topic(request: BrainstormRequest):
         print(f"Brainstorming Error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Brainstorming failed: {str(e)}")
 @app.post("/audio-from-script")
-async def audio_from_script(request: AudioRequest):
+async def audio_from_script(request: AudioRequest, fastapi_request: Request):
     # 1. Process Script into audio chunks
     audio_files = []
     session_id = str(uuid.uuid4())
@@ -515,9 +526,12 @@ async def audio_from_script(request: AudioRequest):
         os.remove(f)
     os.remove(list_file_path)
     
+    scheme = fastapi_request.headers.get("x-forwarded-proto", fastapi_request.url.scheme)
+    base_url = f"{scheme}://{fastapi_request.url.netloc}"
+    
     return {
         "message": "Audio generated successfully", 
-        "audio_url": f"http://localhost:8000/audio/{output_filename}",
+        "audio_url": f"{base_url}/audio/{output_filename}",
         "filename": output_filename
     }
 
