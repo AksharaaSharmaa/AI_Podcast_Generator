@@ -894,7 +894,7 @@ const StudioView = ({
                       <button
                         className="primary"
                         style={{ width: '100%', background: '#fff', color: '#000', border: 'none', fontWeight: 600 }}
-                        onClick={() => window.open('https://podcasters.spotify.com/dash/submit-feed', '_blank')}
+                        onClick={() => window.open('https://creators.spotify.com/dash/submit', '_blank')}
                       >
                         <ArrowRight size={16} /> Open Spotify for Podcasters
                       </button>
