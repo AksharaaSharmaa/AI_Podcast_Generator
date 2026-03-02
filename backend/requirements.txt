@@ -6,3 +6,6 @@ pydantic
 ffmpeg-python
 python-multipart
 python-dotenv
+PyPDF2
+moviepy
+numpy
