@@ -39,10 +39,19 @@ os.makedirs(TEMP_DIR, exist_ok=True)
 
 app.mount("/audio", StaticFiles(directory=TEMP_DIR), name="audio")
 
-def get_user_dir(email: str):
+def get_user_dir(email: str, show_name: Optional[str] = None):
     import hashlib
+    import re
     email_hash = hashlib.md5(email.lower().strip().encode()).hexdigest()
     user_dir = os.path.join(TEMP_DIR, email_hash)
+    
+    if show_name:
+        # Create a URL-friendly slug from show_name
+        slug = re.sub(r'[^a-z0-9]+', '-', show_name.lower()).strip('-')
+        if not slug:
+            slug = "default-show"
+        user_dir = os.path.join(user_dir, slug)
+        
     os.makedirs(user_dir, exist_ok=True)
     return user_dir, email_hash
 
@@ -58,7 +67,7 @@ def save_podcasts(user_dir: str, podcasts: list):
     with open(podcasts_file, "w") as f:
         json.dump(podcasts, f, indent=4)
 
-def update_rss_feed(user_dir: str, email_hash: str, email: str, podcasts: list, base_url: str):
+def update_rss_feed(user_dir: str, email_hash: str, email: str, podcasts: list, base_url: str, show_name: Optional[str] = None):
     ET.register_namespace('itunes', 'http://www.itunes.com/dtds/podcast-1.0.dtd')
     ET.register_namespace('atom', 'http://www.w3.org/2005/Atom')
     
@@ -69,14 +78,23 @@ def update_rss_feed(user_dir: str, email_hash: str, email: str, podcasts: list, 
 
     channel = ET.SubElement(rss, "channel")
     
+    # Get show slug for URL
+    import re
+    show_slug = os.path.basename(user_dir) if show_name else None
+    
     # Self-link for Atom compliance
-    rss_url = f"{base_url}/audio/{email_hash}/rss.xml"
+    if show_slug:
+        rss_url = f"{base_url}/audio/{email_hash}/{show_slug}/rss.xml"
+    else:
+        rss_url = f"{base_url}/audio/{email_hash}/rss.xml"
+        
     atom_link = ET.SubElement(channel, "atom:link")
     atom_link.set("href", rss_url)
     atom_link.set("rel", "self")
     atom_link.set("type", "application/rss+xml")
 
-    ET.SubElement(channel, "title").text = f"AI Podcast Studio - {email}"
+    display_title = show_name if show_name else f"AI Podcast Studio - {email}"
+    ET.SubElement(channel, "title").text = display_title
     ET.SubElement(channel, "link").text = base_url
     ET.SubElement(channel, "description").text = f"Professional AI-generated conversations for {email}"
     ET.SubElement(channel, "language").text = "en-us"
@@ -99,7 +117,7 @@ def update_rss_feed(user_dir: str, email_hash: str, email: str, podcasts: list, 
     image_url = "https://images.unsplash.com/photo-1590602847861-f357a9332bbc?w=1400&h=1400&fit=crop"
     img_element = ET.SubElement(channel, "image")
     ET.SubElement(img_element, "url").text = image_url
-    ET.SubElement(img_element, "title").text = f"AI Podcast Studio - {email}"
+    ET.SubElement(img_element, "title").text = display_title
     ET.SubElement(img_element, "link").text = base_url
 
     # iTunes Image
@@ -116,7 +134,10 @@ def update_rss_feed(user_dir: str, email_hash: str, email: str, podcasts: list, 
         
         enclosure = ET.SubElement(item, "enclosure")
         filename = pod.get("filename")
-        audio_url = f"{base_url}/audio/{email_hash}/{filename}"
+        if show_slug:
+            audio_url = f"{base_url}/audio/{email_hash}/{show_slug}/{filename}"
+        else:
+            audio_url = f"{base_url}/audio/{email_hash}/{filename}"
         enclosure.set("url", audio_url)
         enclosure.set("type", "audio/mpeg")
         enclosure.set("length", "0")
@@ -187,6 +208,7 @@ class PublishRequest(BaseModel):
     audio_url: str
     filename: str
     email: str
+    show_name: Optional[str] = None
 
 def split_text(text: str, max_chars: int = 450) -> List[str]:
     chunks = []
@@ -217,14 +239,42 @@ async def generate_audio_chunk(text: str, voice: str, language: str, api_key: st
         "language": normalized_lang
     }
     
-    response = requests.post(url, headers=headers, json=data)
-    if response.status_code != 200:
-        raise HTTPException(status_code=response.status_code, detail=f"Fonada TTS error: {response.text}")
-    
-    file_path = os.path.join(TEMP_DIR, f"{chunk_id}.mp3")
-    with open(file_path, "wb") as f:
-        f.write(response.content)
-    return file_path
+    max_retries = 3
+    last_error = ""
+
+    for attempt in range(max_retries):
+        try:
+            logger.info(f"Fonada TTS attempt {attempt + 1} for chunk {chunk_id}")
+            response = requests.post(url, headers=headers, json=data, timeout=60)
+            
+            if response.status_code == 200:
+                file_path = os.path.join(TEMP_DIR, f"{chunk_id}.mp3")
+                with open(file_path, "wb") as f:
+                    f.write(response.content)
+                return file_path
+            
+            # Handle transient Cloudflare/Server issues (522, 524, 503, 502)
+            if response.status_code in [522, 524, 502, 503, 504]:
+                last_error = f"Status {response.status_code}: {response.reason}"
+                logger.warning(f"Transient error on attempt {attempt + 1}: {last_error}. Retrying...")
+            else:
+                # Permanent errors (401, 400, etc.)
+                logger.error(f"Permanent Fonada error: {response.status_code} - {response.text}")
+                raise HTTPException(status_code=response.status_code, detail=f"Fonada TTS error: {response.text}")
+                
+        except (requests.Timeout, requests.ConnectionError) as e:
+            last_error = str(e)
+            logger.warning(f"Connection/Timeout error on attempt {attempt + 1}: {last_error}. Retrying...")
+        except Exception as e:
+            if isinstance(e, HTTPException): raise e
+            last_error = str(e)
+            logger.error(f"Unexpected error on attempt {attempt + 1}: {last_error}")
+
+        if attempt < max_retries - 1:
+            wait_time = 3 * (attempt + 1) # 3s, 6s...
+            await asyncio.sleep(wait_time)
+            
+    raise HTTPException(status_code=504, detail=f"Fonada TTS timed out after {max_retries} attempts. Last error: {last_error}")
 
 def generate_waveform_video(audio_path, title):
     audio = AudioFileClip(audio_path)
@@ -254,9 +304,9 @@ def generate_waveform_video(audio_path, title):
     if len(audio_data.shape) > 1:
         audio_data = np.mean(audio_data, axis=1)
 
-    num_bars = 90
-    bar_width = 8
-    gap = 6
+    num_bars = 110
+    bar_width = 4
+    gap = 5
     max_height = 200
     centerY = height // 2 - 40
     bars_x_start = (width - (num_bars * (bar_width + gap))) // 2
@@ -277,7 +327,7 @@ def generate_waveform_video(audio_path, title):
         return np.sqrt(np.mean(np.square(segment)))
 
     try:
-        font = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf", 55)
+        font = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf", 85)
     except:
         font = ImageFont.load_default()
 
@@ -361,7 +411,12 @@ async def generate_script(request: ScriptRequest):
         speaker_names = [s.name for s in request.speakers]
         prompt += "The speakers are: " + ", ".join(speaker_names) + ". "
         prompt += f"IMPORTANT: Use these EXACT names [{', '.join(speaker_names)}] in the 'speaker' field of the JSON output. "
-        prompt += "Make the conversation flow naturally with interruptions, agreements, and dynamic interactions. "
+        
+        if len(speaker_names) > 1:
+            prompt += "Make the conversation flow naturally with interruptions, agreements, and dynamic interactions. "
+        else:
+            prompt += "The podcast should be a captivating, insightful, and professional monologue by the single speaker. Ensure the narrative flows logically and remains engaging throughout. "
+
         prompt += "Return the script as a JSON list of objects with 'speaker' and 'text' fields. "
         prompt += "Format: {'script': [{'speaker': 'Name', 'text': '...'}]}"
         
@@ -610,14 +665,25 @@ async def audio_from_script(request: AudioRequest, fastapi_request: Request):
 @app.post("/publish-to-rss")
 async def publish_to_rss(request: PublishRequest, fastapi_request: Request):
     try:
-        user_dir, email_hash = get_user_dir(request.email)
+        user_dir, email_hash = get_user_dir(request.email, request.show_name)
         
         # Move audio file to user directory if it's currently in root TEMP_DIR
         source_path = os.path.join(TEMP_DIR, request.filename)
         dest_path = os.path.join(user_dir, request.filename)
+        
         if os.path.exists(source_path):
             import shutil
             shutil.move(source_path, dest_path)
+        elif not os.path.exists(dest_path):
+            # Fallback: check if it's in a different folder (maybe user generated multiple times)
+            found = False
+            for root, dirs, files in os.walk(TEMP_DIR):
+                if request.filename in files:
+                    shutil.move(os.path.join(root, request.filename), dest_path)
+                    found = True
+                    break
+            if not found:
+                raise HTTPException(status_code=404, detail="Audio file not found for publishing")
             
         podcasts = load_podcasts(user_dir)
         
@@ -635,13 +701,14 @@ async def publish_to_rss(request: PublishRequest, fastapi_request: Request):
         # Detect protocol correctly on Render
         scheme = fastapi_request.headers.get("x-forwarded-proto", fastapi_request.url.scheme)
         base_url = f"{scheme}://{fastapi_request.url.netloc}"
-        rss_url = update_rss_feed(user_dir, email_hash, request.email, podcasts, base_url)
+        rss_url = update_rss_feed(user_dir, email_hash, request.email, podcasts, base_url, request.show_name)
         
         return {
             "message": "Episode published to RSS feed successfully",
             "rss_url": rss_url
         }
     except Exception as e:
+        logger.error(f"Publish failed: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to publish to RSS: {str(e)}")
 
 if __name__ == "__main__":
