@@ -1,6 +1,8 @@
-# AI Podcast Studio 🎙️
+# FonadaLabs Podcast Studio 🎙️
 
-A professional AI-powered podcast generation platform that transforms topics or raw content into high-fidelity audio productions using advanced Indian language synthesis.
+A professional AI-powered podcast generation platform that transforms topics or raw content into high-fidelity audio and video productions using advanced Indian language synthesis.
+
+🚀 **Deployed Link:** [Live Demo](https://ai-podcast-generator-1-om5g.onrender.com/)
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![React](https://img.shields.io/badge/frontend-React-61dafb.svg)
@@ -11,112 +13,74 @@ A professional AI-powered podcast generation platform that transforms topics or 
 
 ## ✨ Features
 
-### 🧠 Topic Explorer (AI Brainstorming)
-- **Interactive Chat**: Brainstorm podcast ideas with Gemini directly in the studio.
-- **Smart Selection**: The AI listens for your preference and can auto-populate your selection into the main workbench.
-- **Rich Formatting**: Clean, formatted suggestions with catchy title options.
+### 🧠 AI Topic Explorer
+- **Brainstorming Hub**: Chat with Gemini to discover trending podcast topics.
+- **Contextual Selection**: Auto-populate the studio with brainstormed ideas.
 
-### 🛠️ Studio Workbench
-- **Flexible Modes**: Generate scripts from a simple **Topic** or long-form **Raw Content**.
-- **Multi-Speaker Support**: Add up to 4 distinct speakers with customizable nicknames.
-- **Multi-Language**: Support for **Hindi, Tamil, Telugu, and English (including Mix)**.
-- **Audio Control**: Toggle between **Mono** and **Stereo** production.
-- **Precise Duration**: Specify exact duration in minutes for your production.
+### 🛠️ Production Workbench
+- **Flexible Inputs**: Support for **Topics**, **Raw Text**, or **Document Uploads**.
+- **Speaker Customization**: Add multiple speakers with unique nicknames and realistic Indian voices.
+- **Intelligent Monologues**: Natively supports single-speaker podcasts with tailored narrative flow.
+- **Multi-Language**: Hindi, Tamil, Telugu, and English (Global & Mix).
 
-### ✍️ Script Editor & Review
-- **Live Editing**: Review and modify generated script lines.
-- **Granular Regeneration**: Dislike a specific line? Regenerate it with a single click while maintaining context.
-- **Pricing Estimator**: Professional cost breakdown based on character count:
-    - Real-time **Credit** calculation (10 chars = 1 credit).
-    - Estimated cost in **INR (₹)** and **USD ($)**.
-    - Character limit verification (450 chars per request).
+### 🎬 Elite Video Generation
+- **Premium Waveforms**: Beautiful, sleek animated waveforms with radial glows.
+- **YouTube Ready**: Export high-definition MP4 videos with dynamic titles and branding.
+- **Custom Aesthetics**: Optimized layout with thinned waveforms and prominent titles for a premium feel.
 
-### 🔊 High-Fidelity Audio
-- **Hyper-Realistic Voices**: Leveraging FonadaLabs' advanced Indian language TTS.
-- **Production Grade**: Crystal-clear output ready for export.
-- **Direct Download**: Export your final production as an MP3.
+### 🎧 Distribution & RSS
+- **Multi-Show Support**: Create separate podcast shows with unique feed URLs for the same email.
+- **Spotify Optimized**: Generates standardized RSS feeds that solve "duplicate podcast" errors.
+- **One-Click Publishing**: Seamless flow from audio generation to RSS feed deployment.
 
----
-
-## 🚀 Getting Started
-
-### Prerequisites
-- Python 3.8+
-- Node.js & npm
-- FFmpeg (for audio processing)
-- Redis (for background task management)
-
-### Installation
-
-1. **Clone the Repository**
-   ```bash
-   git clone https://github.com/AksharaaSharmaa/AI_Podcast_Generator.git
-   cd AI_Podcast_Generator
-   ```
-
-2. **Backend Setup**
-   ```bash
-   cd backend
-   python -m venv venv
-   source venv/bin/activate  # Windows: venv\Scripts\activate
-   pip install -r requirements.txt
-   ```
-
-3. **Frontend Setup**
-   ```bash
-   cd ../frontend
-   npm install
-   ```
-
----
-
-## 🛠️ Running the Application
-
-1. **Start Redis Server**
-   ```bash
-   sudo service redis-server start
-   ```
-
-2. **Start Backend Server**
-   ```bash
-   cd backend
-   python main.py
-   ```
-
-3. **Start Frontend (Vite)**
-   ```bash
-   cd frontend
-   npm run dev
-   ```
-
-4. **Start Worker (Optional, for background tasks)**
-   ```bash
-   cd backend
-   rq worker podcast_tasks
-   ```
+### 🛡️ Reliability & Scale
+- **Error Resilience**: Robust retry mechanism with exponential backoff for TTS synthesis (handles 522 timeouts).
+- **Session Persistence**: Library management to keep track of your generated podcasts.
 
 ---
 
 ## 🏗️ Tech Stack
 
 - **Frontend**: React.js, Lucide Icons, Axios, Vanilla CSS (Glassmorphism).
-- **Backend**: FastAPI, Google Generative AI (Gemini 2.5 Flash), FFmpeg-python.
-- **Infrastructure**: Uvicorn, Redis, Python-RQ.
+- **Backend**: FastAPI, Google Generative AI (Gemini 2.5 Flash), FFmpeg.
+- **Production**: Uvicorn, Python-RQ (Worker management).
+
+---
+
+## 🚀 Getting Started
+
+### Prerequisites
+- Python 3.10+
+- Node.js & npm
+- FFmpeg (for media processing)
+
+### Installation
+
+1. **Clone & Setup Backend**
+   ```bash
+   git clone https://github.com/AksharaaSharmaa/AI_Podcast_Generator.git
+   cd backend
+   python -m venv venv
+   source venv/bin/activate
+   pip install -r requirements.txt
+   ```
+
+2. **Setup Frontend**
+   ```bash
+   cd ../frontend
+   npm install
+   ```
+
+3. **Run Application**
+   - Start Backend: `python main.py`
+   - Start Frontend: `npm run dev`
 
 ---
 
 ## 📜 Pricing Model (FonadaLabs)
-- **Formula**: 10 Characters = 1 Credit.
-- **Rate**: Approx. ₹12 / 10,000 characters.
-- **Limits**: Max 450 characters per single API request.
+- **Rate**: 10 Characters = 1 Credit.
+- **Optimization**: Built-in pricing estimator to track credit usage in real-time.
 
 ---
 
-## 🤝 Contributing
-Contributions are welcome! Feel free to open issues or submit pull requests.
-
-## 📄 License
-MIT License.
-
----
 *Developed with ❤️ by Aksharaa Sharma*
