@@ -85,6 +85,7 @@ function App() {
   const [rssUrl, setRssUrl] = useState('');
   const [isPublishing, setIsPublishing] = useState(false);
   const [userEmail, setUserEmail] = useState('');
+  const [showName, setShowName] = useState('');
 
   // Topic Explorer State
   const [showTopicExplorer, setShowTopicExplorer] = useState(false);
@@ -238,7 +239,8 @@ function App() {
         description: `Generated podcast about ${topic || 'AI'}`,
         audio_url: audioUrl,
         filename: audioFilename,
-        email: userEmail
+        email: userEmail,
+        show_name: showName
       });
       setRssUrl(response.data.rss_url);
     } catch (err) {
@@ -307,6 +309,8 @@ function App() {
             rssUrl={rssUrl}
             userEmail={userEmail}
             setUserEmail={setUserEmail}
+            showName={showName}
+            setShowName={setShowName}
           />
         )}
       </main>
@@ -554,7 +558,7 @@ const StudioView = ({
   publishPlatform, setPublishPlatform,
   generateVideo, isVideoGenerating, videoUrl,
   publishToSpotify, isPublishing, rssUrl,
-  userEmail, setUserEmail
+  userEmail, setUserEmail, showName, setShowName
 }) => {
   return (
     <div className="studio-container" style={{ paddingTop: '3rem' }}>
@@ -719,7 +723,7 @@ const StudioView = ({
 
           {generatedScript.map((line, idx) => {
             const speakerName = line.speaker || "Unknown";
-            const isHost = speakerName.toLowerCase().includes('host') || idx % 2 === 0;
+            const isHost = speakers.length === 1 || speakerName.toLowerCase().includes('host') || idx % 2 === 0;
             return (
               <div key={idx} className={`script-line ${isHost ? 'host' : 'guest'}`}>
                 <div className="script-speaker">
@@ -848,6 +852,15 @@ const StudioView = ({
                   <p style={{ color: 'var(--text-muted)', marginBottom: '1.5rem', textAlign: 'center' }}>
                     Generate a unique RSS feed tied to your email.
                   </p>
+
+                  <div className="form-group" style={{ maxWidth: '400px', margin: '0 auto 1.5rem' }}>
+                    <label>Podcast Show Name (Optional for separate feeds)</label>
+                    <input
+                      placeholder="e.g. Daily Tech News"
+                      value={showName}
+                      onChange={(e) => setShowName(e.target.value)}
+                    />
+                  </div>
 
                   <div className="form-group" style={{ maxWidth: '400px', margin: '0 auto 1.5rem' }}>
                     <label>Your Email (for Spotify Verification)</label>
