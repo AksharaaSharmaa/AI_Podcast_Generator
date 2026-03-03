@@ -1,61 +1,64 @@
-# FonadaLabs Podcast Studio 🎙️
+<h1 align="center"> FonadaLabs Podcast Studio 🎙️ </h1>
 
-A professional AI-powered podcast generation platform that transforms topics or raw content into high-fidelity audio and video productions using advanced Indian language synthesis.
 
-🚀 **Deployed Link:** [Live Demo](https://ai-podcast-generator-1-om5g.onrender.com/)
+A professional AI-powered podcast generation platform that transforms topics or raw content into high-fidelity audio and **premium waveform videos**. Built for creators who want to distribute to **Spotify** and **YouTube** with ease.
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
+🚀 **Live Production Link:** [https://ai-podcast-generator-1-om5g.onrender.com/](https://ai-podcast-generator-1-om5g.onrender.com/)
+
 ![React](https://img.shields.io/badge/frontend-React-61dafb.svg)
 ![FastAPI](https://img.shields.io/badge/backend-FastAPI-009688.svg)
 ![Gemini](https://img.shields.io/badge/AI-Gemini_2.5_Flash-purple.svg)
+![FFmpeg](https://img.shields.io/badge/Media-FFmpeg-green.svg)
 
 ---
 
-## ✨ Features
+## 🌟 Key Modules
 
-### 🧠 AI Topic Explorer
-- **Brainstorming Hub**: Chat with Gemini to discover trending podcast topics.
-- **Contextual Selection**: Auto-populate the studio with brainstormed ideas.
+### 🎬 Elite Video Generation (YouTube Ready)
+Transform your audio into a professional video with our **Elite Waveform Engine**:
+- **Dynamic Waveforms**: Real-time RMS-based scaling with thinned, sleek bars and rounded gradients.
+- **Premium Backgrounds**: Procedurally generated mesh backgrounds with radial glows and noise textures.
+- **Ambient Animation**: Subtle scaling and glowing effects that react to the audio amplitude.
+- **Cinematic Titles**: Prominent, high-clarity overlay of your podcast title with optimized typography.
+
+### 🎧 Spotify & RSS Integration
+Professional-grade distribution system built for Spotify for Podcasters:
+- **Multi-Show Support**: Create and manage multiple podcast shows under a single email using unique directory slugs.
+- **Unique Feed Isolation**: Each show gets its own independent `rss.xml`, solving the "duplicate podcast" error on Spotify.
+- **Spotify Verification**: Built-in flow for email-linked RSS ownership and verification.
+- **Auto-Assembly**: Seamlessly bundles multiple audio chunks with natural silence gaps and cross-fades.
+
+### 🧠 AI Scripting & Brainstorming
+- **Topic Explorer**: Interactive chat interface with Gemini to brainstorm and refine podcast ideas.
+- **Contextual Generation**: Converts brainstormed topics or uploaded documents into natural, multi-speaker scripts.
+- **Monologue Mode**: Smart prompt branching for single-speaker podcasts, ensuring a captivating and logical flow.
 
 ### 🛠️ Production Workbench
-- **Flexible Inputs**: Support for **Topics**, **Raw Text**, or **Document Uploads**.
-- **Speaker Customization**: Add multiple speakers with unique nicknames and realistic Indian voices.
-- **Intelligent Monologues**: Natively supports single-speaker podcasts with tailored narrative flow.
-- **Multi-Language**: Hindi, Tamil, Telugu, and English (Global & Mix).
-
-### 🎬 Elite Video Generation
-- **Premium Waveforms**: Beautiful, sleek animated waveforms with radial glows.
-- **YouTube Ready**: Export high-definition MP4 videos with dynamic titles and branding.
-- **Custom Aesthetics**: Optimized layout with thinned waveforms and prominent titles for a premium feel.
-
-### 🎧 Distribution & RSS
-- **Multi-Show Support**: Create separate podcast shows with unique feed URLs for the same email.
-- **Spotify Optimized**: Generates standardized RSS feeds that solve "duplicate podcast" errors.
-- **One-Click Publishing**: Seamless flow from audio generation to RSS feed deployment.
-
-### 🛡️ Reliability & Scale
-- **Error Resilience**: Robust retry mechanism with exponential backoff for TTS synthesis (handles 522 timeouts).
-- **Session Persistence**: Library management to keep track of your generated podcasts.
+- **Speaker Customization**: Add up to 4 speakers with custom nicknames and hyper-realistic Indian voices.
+- **Live Script Editor**: Granular control to edit or regenerate specific lines while maintaining a cohesive narrative.
+- **Real-time Costing**: Integrated pricing estimator for character-based billing (INR/USD).
+- **Error Resilience**: Robust retry logic with exponential backoff to handle TTS API timeouts.
 
 ---
 
-## 🏗️ Tech Stack
+## 🏗️ Technical Architecture
 
-- **Frontend**: React.js, Lucide Icons, Axios, Vanilla CSS (Glassmorphism).
-- **Backend**: FastAPI, Google Generative AI (Gemini 2.5 Flash), FFmpeg.
-- **Production**: Uvicorn, Python-RQ (Worker management).
+- **Frontend**: React.js with Glassmorphism UI, Lucide Icons, and Axios for async communication.
+- **Backend**: FastAPI (Python) for high-performance API handling.
+- **Media Engine**: FFmpeg and MoviePy for high-fidelity audio concatenation and video synthesis.
+- **Intelligence**: Google Gemini 2.5 Flash for script generation and topic brainstorming.
+- **Persistence**: File-system based multi-user isolation with email hashing.
 
 ---
 
-## 🚀 Getting Started
+## 🚀 Local Setup
 
 ### Prerequisites
 - Python 3.10+
 - Node.js & npm
-- FFmpeg (for media processing)
+- FFmpeg installed in your system PATH
 
-### Installation
-
+### Installation steps
 1. **Clone & Setup Backend**
    ```bash
    git clone https://github.com/AksharaaSharmaa/AI_Podcast_Generator.git
@@ -63,24 +66,16 @@ A professional AI-powered podcast generation platform that transforms topics or 
    python -m venv venv
    source venv/bin/activate
    pip install -r requirements.txt
+   python main.py
    ```
 
 2. **Setup Frontend**
    ```bash
    cd ../frontend
    npm install
+   npm run dev
    ```
 
-3. **Run Application**
-   - Start Backend: `python main.py`
-   - Start Frontend: `npm run dev`
-
 ---
 
-## 📜 Pricing Model (FonadaLabs)
-- **Rate**: 10 Characters = 1 Credit.
-- **Optimization**: Built-in pricing estimator to track credit usage in real-time.
-
----
-
-*Developed with ❤️ by Aksharaa Sharma*
+*Developed with ❤️ by Akshara Sharma*
